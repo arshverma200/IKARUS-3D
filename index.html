@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Solar System Ikraus 3D</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+
+        #gui { 
+            position: absolute; 
+            top: 10px; 
+            right: 10px; 
+            max-height: 90vh; 
+            overflow-y: auto; 
+            padding-right: 10px; 
+            background: rgba(255, 255, 255, 0.8); 
+            border-radius: 5px;
+        }
+
+        .dg.main {
+            max-height: 80vh; 
+            overflow-y: auto; 
+        }
+
+        #saveLoadButtons {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+        }
+
+        #saveLoadButtons button {
+            margin: 5px;
+            padding: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        #saveLoadButtons button:hover {
+            background: #45a049;
+        }
+
+        #loadSelect {
+            padding: 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="saveLoadButtons">
+        <button id="saveButton">Save Configuration</button>
+        <select id="loadSelect">
+            <option value="">Select a configuration to load</option>
+        </select>
+    </div>
+    <div id="gui"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dat.gui@0.7.7/build/dat.gui.min.js"></script>
+
+    <!-- Firebase SDK (v9.x Modular) -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js';
+        import { getFirestore, doc, setDoc, getDocs, collection } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
+
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDSYex-LEBkt2LcCrRNRjxZDdqAi62V35E",
+            authDomain: "solar-system-ikarus-3d.firebaseapp.com",
+            projectId: "solar-system-ikarus-3d",
+            storageBucket: "solar-system-ikarus-3d.firebasestorage.app",
+            messagingSenderId: "424249080751",
+            appId: "1:424249080751:web:d0c2dd9fe437f3a649cd5a",
+            measurementId: "G-XFZY769HC5"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Camera and controls
+        camera.position.z = 100;
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.minDistance = 30;
+        controls.maxDistance = 300;
+
+        // GUI setup
+        const gui = new dat.GUI({ autoPlace: false });
+        document.getElementById('gui').appendChild(gui.domElement);
+
+        // Store planet data
+        let solarObjects = [];
+
+        // Add stars background
+        function addStars() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsVertices = [];
+            for (let i = 0; i < 10000; i++) {
+                const x = THREE.MathUtils.randFloatSpread(2000);
+                const y = THREE.MathUtils.randFloatSpread(2000);
+                const z = THREE.MathUtils.randFloatSpread(2000);
+                starsVertices.push(x, y, z);
+            }
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const starsMaterial = new THREE.PointsMaterial({ color: 0xFFFFFF, size: 0.7 });
+            const starField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starField);
+        }
+
+        // Create Sun with glow
+        function createSun() {
+            const sunGeometry = new THREE.SphereGeometry(5, 64, 64);
+            const sunMaterial = new THREE.MeshPhongMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: 2,
+                specular: 0xffffff,
+                shininess: 100
+            });
+            const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+
+            // Add sun glow
+            const glowGeometry = new THREE.SphereGeometry(5.5, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff9900,
+                transparent: true,
+                opacity: 0.3
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            sun.add(glow);
+
+            scene.add(sun);
+            return sun;
+        }
+
+        // Create orbital ring
+        function createOrbitRing(radius) {
+            const orbitGeometry = new THREE.RingGeometry(radius - 0.5, radius + 0.5, 64);
+            const orbitMaterial = new THREE.LineBasicMaterial({
+                color: 0x444444,
+                side: THREE.DoubleSide,
+                transparent: false,
+                opacity: 0.8,
+                linewidth: 1
+            });
+            const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+            orbit.rotation.x = Math.PI / 2;
+            return orbit;
+        }
+
+        // Create planet with 3D color
+        function createPlanet(name, size, color, distance, speed) {
+            const planetGeometry = new THREE.SphereGeometry(size, 64, 64);
+            const planetMaterial = new THREE.MeshPhongMaterial({
+                color: color,
+                specular: 0x222222,
+                shininess: 10
+            });
+            const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+
+            const orbit = new THREE.Object3D();
+            scene.add(orbit);
+            orbit.add(planet);
+            planet.position.x = distance;
+
+            // Add orbital ring
+            const orbitRing = createOrbitRing(distance);
+            scene.add(orbitRing);
+
+            // Store adjustable parameters
+            const planetData = {
+                name: name,
+                size: size,
+                color: color,
+                distance: distance,
+                speed: speed,
+                mesh: planet,
+                orbit: orbit,
+                orbitRing: orbitRing
+            };
+
+            // Add GUI controls
+            const folder = gui.addFolder(name);
+            folder.add(planetData, 'size', 0.1, 5).name('Radius').onChange(value => {
+                planet.scale.set(value, value, value);
+            });
+
+            folder.add(planetData, 'speed', 0.001, 0.1).name('Orbit Speed');
+
+            folder.add(planetData, 'distance', 5, 100).name('Distance').onChange(value => {
+                planet.position.x = value;
+                orbitRing.geometry.dispose();
+                orbitRing.geometry = createOrbitRing(value).geometry;
+            });
+
+            folder.addColor(planetData, 'color').name('Color').onChange(value => {
+                planet.material.color.set(value);
+            });
+
+            folder.open();
+            return planetData;
+        }
+
+        // Create solar system with colored planets
+        function createSolarSystem() {
+            const sun = createSun();
+            const light = new THREE.PointLight(0xffffff, 2, 200);
+            scene.add(light);
+
+            // Planet parameters [name, size, color, distance, speed]
+            const planets = [
+                ['Mercury', 0.4, 0x808080, 8, 0.04],
+                ['Venus', 0.9, 0xffd700, 11, 0.03],
+                ['Earth', 1, 0x0000ff, 15, 0.02],
+                ['Mars', 0.5, 0xff0000, 20, 0.015],
+                ['Jupiter', 2.5, 0xffa500, 28, 0.01],
+                ['Saturn', 2, 0xffd700, 35, 0.008],
+                ['Uranus', 1.2, 0x00ffff, 40, 0.005],
+                ['Neptune', 1.2, 0x0000ff, 45, 0.004]
+            ];
+
+            return planets.map(params => createPlanet(...params));
+        }
+
+        // Serialize solar system data
+        function serializeSolarSystem() {
+            return solarObjects.map(planet => ({
+                name: planet.name,
+                size: planet.size,
+                color: planet.color.getHex(),
+                distance: planet.distance,
+                speed: planet.speed
+            }));
+        }
+
+        // Deserialize solar system data
+        function deserializeSolarSystem(data) {
+            solarObjects.forEach(planet => {
+                const planetData = data.find(p => p.name === planet.name);
+                if (planetData) {
+                    planet.size = planetData.size;
+                    planet.color.setHex(planetData.color);
+                    planet.distance = planetData.distance;
+                    planet.speed = planetData.speed;
+                    planet.mesh.scale.set(planetData.size, planetData.size, planetData.size);
+                    planet.mesh.position.x = planetData.distance;
+                    planet.mesh.material.color.setHex(planetData.color);
+                    planet.orbitRing.geometry.dispose();
+                    planet.orbitRing.geometry = createOrbitRing(planetData.distance).geometry;
+                }
+            });
+        }
+
+        // Save configuration to Firebase
+        async function saveConfiguration() {
+            const data = serializeSolarSystem();
+            const configName = prompt("Enter a name for this configuration:");
+            if (configName) {
+                try {
+                    await setDoc(doc(db, 'data', configName), { data });
+                    alert("Configuration saved!");
+                    updateLoadOptions(); // Update the dropdown after saving
+                } catch (error) {
+                    console.error("Error saving configuration: ", error);
+                    alert("Error saving configuration!");
+                }
+            }
+        }
+
+        // Load configuration from Firebase
+        async function loadConfiguration(configName) {
+            if (configName) {
+                try {
+                    const docRef = doc(db, 'data', configName);
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        deserializeSolarSystem(docSnap.data().data);
+                        alert("Configuration loaded!");
+                    } else {
+                        alert("Configuration not found!");
+                    }
+                } catch (error) {
+                    console.error("Error loading configuration: ", error);
+                    alert("Error loading configuration!");
+                }
+            }
+        }
+
+        // Update the dropdown list with saved configurations
+        async function updateLoadOptions() {
+            const loadSelect = document.getElementById('loadSelect');
+            loadSelect.innerHTML = '<option value="">Select a configuration to load</option>'; // Reset options
+            try {
+                const querySnapshot = await getDocs(collection(db, 'data'));
+                querySnapshot.forEach((doc) => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.id;
+                    loadSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error("Error loading configurations: ", error);
+            }
+        }
+
+        // Add event listeners for save/load buttons
+        document.getElementById('saveButton').addEventListener('click', saveConfiguration);
+
+        // Load selected configuration when the dropdown value changes
+        document.getElementById('loadSelect').addEventListener('change', (event) => {
+            const configName = event.target.value;
+            loadConfiguration(configName);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            solarObjects.forEach(planet => {
+                planet.orbit.rotation.y += planet.speed;
+                planet.mesh.rotation.y += 0.01; // Planet self-rotation
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // Initialize system
+        solarObjects = createSolarSystem();
+        addStars();
+        updateLoadOptions(); // Update dropdown on page load
+
+        // Handle window resize
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
