@@ -18,7 +18,7 @@ First, clone the repository to your local machine:
 
 bash
 Copy
-git clone https://github.com/your-username/solar-system-ikarus-3d.git
+git clone https://github.com/arshverma200/IKARUS-3D.git
 cd solar-system-ikarus-3d
 2. Firebase Setup
 Create a new Firebase project at Firebase Console.
